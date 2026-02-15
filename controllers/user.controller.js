@@ -10,7 +10,8 @@ const User = mongoose.model('User');
 export const renderCreateForm = async (req, res) => {
   res.render('users/create',  {
     title: 'Add new User',
-    error: null
+    error: null,
+    formData: { name: '', email: '' }
   })
 };
 
@@ -32,24 +33,23 @@ export const createUser = async (req, res) => {
     res.redirect('/users');
   } catch (error) {
     console.error('Error creating user: ', error);
-    res.render('users/create', {
-      title: 'Add new User',
-      error: error.message
-    });
+    const formData = {
+      name: req.body?.name || '',
+      email: req.body?.email || ''
+    };
+    let errorMessage = 'An error occurred while creating the user. Please try again.';
 
-    // Handle Mongoose validation errors
-    if(error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(val => val.message);
-      res.render('users/create', {
-        title: 'Add new User',
-        error: messages.join(', ')
-      });
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map((val) => val.message);
+      errorMessage = messages.join(', ');
+    } else if (error.code === 11000) {
+      errorMessage = 'Email already exists. Please use a different email.';
     }
 
-    // Generic error handling
     res.render('users/create', {
       title: 'Add new User',
-      error: 'An error occurred while creating the user. Please try again.'
+      error: errorMessage,
+      formData
     });
   }
 };
@@ -109,7 +109,7 @@ export const updateUser = async (req, res) => {
     const userId = req.params.id;
     const { name, email } = req.body;
 
-    console.log(`Updating user with ID: ${userId} with data ${res.body}.`);
+    console.log(`Updating user with ID: ${userId} with data ${JSON.stringify(req.body)}.`);
 
     const updatedUser = await User.findByIdAndUpdate(userId, { name, email }, { new: true, runValidators: true });
 
@@ -125,18 +125,30 @@ export const updateUser = async (req, res) => {
 
     // Re fetch the user to populate the form with existing data
     let user = await User.findById(req.params.id);
+    if (!user) {
+      user = { _id: req.params.id, name: req.body?.name || '', email: req.body?.email || '' };
+    }
 
-    if(error.code === 1100) { // Handle duplicate key error (e.g., email already exists)
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map((val) => val.message);
       return res.render('users/edit', {
         title: 'Edit User',
-        user: user,
+        user,
+        error: messages.join(', ')
+      });
+    }
+
+    if(error.code === 11000) { // Handle duplicate key error (e.g., email already exists)
+      return res.render('users/edit', {
+        title: 'Edit User',
+        user,
         error: 'Email already exists. Please use a different email.'
       });
     }
 
     res.render('users/edit', {
       title: 'Edit User',
-      user: user,
+      user,
       error: 'An error occurred while updating the user. Please try again.'
     });
   }
